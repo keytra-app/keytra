@@ -1,0 +1,56 @@
+name: Bug report
+description: Report something that does not work as expected.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not report security vulnerabilities here. Use the private security advisory form instead.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment method
+      options:
+        - Docker / Docker Compose
+        - Coolify
+        - Local development
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Keytra version
+      description: Release, image tag or commit SHA.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: For Docker, `docker compose logs keytra`. Remove passwords, API keys and personal data.
+      render: shell

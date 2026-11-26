@@ -1,0 +1,22 @@
+# Dev-only external services. The app itself runs on the host via `pnpm dev`.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: keytra-dev-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: keytra
+      POSTGRES_PASSWORD: keytra
+      POSTGRES_DB: keytra
+    ports:
+      - "127.0.0.1:${POSTGRES_DEV_PORT:-5432}:5432"
+    volumes:
+      - keytra_pg_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keytra -d keytra"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  keytra_pg_dev:

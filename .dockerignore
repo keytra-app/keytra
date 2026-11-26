@@ -1,0 +1,22 @@
+# Never ship local env files: `next build` would copy them into the standalone output.
+**/.env*
+.git
+.github
+.next
+node_modules
+dist
+coverage
+docs
+logs
+uploads
+.idea
+.vscode
+.claude
+.serena
+**/.DS_Store
+**/Thumbs.db
+**/*.tsbuildinfo
+**/*.pem
+**/*.log
+Dockerfile
+docker-compose*.yml
