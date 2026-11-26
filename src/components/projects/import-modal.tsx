@@ -3,17 +3,19 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 import { UploadIcon } from "@/components/ui/icons";
 import { FieldLabel, Input, Select, Textarea } from "@/components/ui/input";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ModalActions } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import {
   confirmImportAction,
-  previewImportAction,
   type ImportInput,
   type ImportSummary,
+  previewImportAction,
 } from "@/lib/projects/import-actions";
-import type { LocaleProgress } from "@/lib/projects/queries";
+import type { LocaleProgress } from "@/lib/projects/progress";
+import { type ImportMode, ImportPreview } from "./import-preview";
 
 // Must stay below `serverActions.bodySizeLimit` in next.config.ts.
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -54,6 +56,15 @@ export function ImportModalButton(props: Props) {
   );
 }
 
+function jsonSyntaxError(json: string): string | null {
+  try {
+    JSON.parse(json.trim());
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
 function ImportForm({
   projectId,
   sourceLocale,
@@ -71,14 +82,12 @@ function ImportForm({
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const options = [...new Set(["default", ...namespaces])];
 
-  const [mode, setMode] = useState<"source" | "target">("source");
+  const [mode, setMode] = useState<ImportMode>("source");
   const [localeId, setLocaleId] = useState(locales[0]?.id ?? "");
   const [selectedNamespace, setSelectedNamespace] = useState("default");
   const [newNamespace, setNewNamespace] = useState("");
   const [json, setJson] = useState("");
-  const [dragging, setDragging] = useState(false);
   const [preview, setPreview] = useState<ImportSummary | null>(null);
   const [prune, setPrune] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,158 +101,62 @@ function ImportForm({
     prune: mode === "source" && prune,
   };
 
-  async function loadFile(file: File | undefined) {
-    if (!file) return;
+  /** Runs a server request; network failures surface as a generic error. */
+  function request(action: () => Promise<void>) {
     setError(null);
-    if (!file.name.toLowerCase().endsWith(".json")) return setError("Bitte eine .json-Datei wählen.");
-    if (file.size > MAX_BYTES) return setError("Die Datei ist größer als 5 MB.");
-    try {
-      setJson(await file.text());
-    } catch {
-      setError("Die Datei konnte nicht gelesen werden.");
-    }
+    startTransition(async () => {
+      try {
+        await action();
+      } catch {
+        setError(REQUEST_FAILED);
+      }
+    });
   }
 
   function handlePreview(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (new Blob([json]).size > MAX_BYTES) return setError("Das JSON ist größer als 5 MB.");
-    try {
-      JSON.parse(json.trim());
-    } catch (err) {
-      return setError(`Ungültiges JSON: ${(err as Error).message}`);
-    }
-    startTransition(async () => {
-      try {
-        const result = await previewImportAction(input);
-        if (!result.ok) return setError(result.error);
-        setPrune(false);
-        setPreview(result.summary);
-      } catch {
-        setError(REQUEST_FAILED);
-      }
+    const syntaxError = jsonSyntaxError(json);
+    if (syntaxError) return setError(`Ungültiges JSON: ${syntaxError}`);
+
+    request(async () => {
+      const result = await previewImportAction(input);
+      if (!result.ok) return setError(result.error);
+      setPrune(false);
+      setPreview(result.summary);
     });
   }
 
   function handleConfirm() {
-    setError(null);
-    startTransition(async () => {
-      try {
-        const result = await confirmImportAction(input);
-        if (!result.ok) return setError(result.error);
-        const s = result.summary;
-        const extra = mode === "source" ? `${s.pruned} gelöscht` : `${s.skipped} übersprungen`;
-        toast(`Import: ${s.added} neu · ${s.updated} geändert · ${extra}`);
-        onDone();
-        router.refresh();
-      } catch {
-        setError(REQUEST_FAILED);
-      }
+    request(async () => {
+      const result = await confirmImportAction(input);
+      if (!result.ok) return setError(result.error);
+      const { added, updated, pruned, skipped } = result.summary;
+      const extra = mode === "source" ? `${pruned} gelöscht` : `${skipped} übersprungen`;
+      toast(`Import: ${added} neu · ${updated} geändert · ${extra}`);
+      onDone();
+      router.refresh();
     });
   }
 
-  const alert = error && (
-    <p role="alert" className="rounded-md border border-red-900/70 bg-red-950/40 px-3 py-2 text-xs break-words text-red-300">
-      {error}
-    </p>
-  );
-
   if (preview) {
-    const pruneCount = prune ? preview.pruned : 0;
-    const changes = preview.added + preview.updated + pruneCount;
-    const groups = [
-      {
-        label: mode === "source" ? "neue Keys" : "neue Übersetzungen",
-        count: preview.added,
-        keys: preview.keys.added,
-      },
-      {
-        label:
-          mode === "source"
-            ? "geänderte Keys (Übersetzungen werden als veraltet markiert)"
-            : "geänderte Übersetzungen",
-        count: preview.updated,
-        keys: preview.keys.updated,
-      },
-      { label: "unverändert", count: preview.unchanged, keys: [] },
-      ...(mode === "target"
-        ? [{ label: "übersprungen (unbekannter Key oder leerer Wert)", count: preview.skipped, keys: preview.keys.skipped }]
-        : []),
-      ...(prune ? [{ label: "Keys werden gelöscht", count: preview.pruned, keys: preview.keys.pruned }] : []),
-    ];
-
     return (
-      <div className="space-y-4">
-        <p className="text-xs text-zinc-500">
-          Vorschau für{" "}
-          <span className="font-mono text-zinc-300">
-            {mode === "source" ? sourceLocale : locales.find((l) => l.id === localeId)?.code}
-          </span>{" "}
-          · Namespace <span className="font-mono break-all text-zinc-300">{namespace}</span>
-        </p>
-
-        <ul className="divide-y divide-zinc-800 rounded-md border border-zinc-800">
-          {groups.map((group) => (
-            <li key={group.label} className="px-3 py-2 text-xs text-zinc-300">
-              {group.keys.length > 0 ? (
-                <details>
-                  <summary className="cursor-pointer">
-                    <span className="font-mono text-zinc-100">{group.count}</span> {group.label}
-                  </summary>
-                  <KeyList keys={group.keys} />
-                </details>
-              ) : (
-                <div className="pl-3.5">
-                  <span className="font-mono text-zinc-100">{group.count}</span> {group.label}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-
-        {mode === "source" && (
-          <label className="flex items-start gap-2 text-xs text-zinc-300">
-            <input
-              type="checkbox"
-              checked={prune}
-              onChange={(e) => setPrune(e.target.checked)}
-              disabled={pending || preview.pruned === 0}
-              className="mt-0.5 accent-zinc-100"
-            />
-            <span>
-              Verwaiste Keys in diesem Namespace entfernen (Prune):{" "}
-              <span className="font-mono">{preview.pruned}</span>
-              {prune && (
-                <span className="block text-red-400">
-                  {preview.pruned} Keys samt Übersetzungen werden unwiderruflich gelöscht.
-                </span>
-              )}
-            </span>
-          </label>
-        )}
-
-        {alert}
-
-        <div className="flex items-center justify-end gap-2 border-t border-zinc-800/80 pt-4">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setError(null);
-              setPreview(null);
-            }}
-            disabled={pending}
-          >
-            Zurück
-          </Button>
-          <Button
-            variant={prune ? "danger-solid" : "primary"}
-            onClick={handleConfirm}
-            disabled={pending || changes === 0}
-          >
-            {pending ? "Importiere …" : changes === 0 ? "Keine Änderungen" : "Importieren"}
-          </Button>
-        </div>
-      </div>
+      <ImportPreview
+        preview={preview}
+        mode={mode}
+        localeCode={mode === "source" ? sourceLocale : locales.find((l) => l.id === localeId)?.code}
+        namespace={namespace}
+        prune={prune}
+        onPruneChange={setPrune}
+        pending={pending}
+        error={error}
+        onBack={() => {
+          setError(null);
+          setPreview(null);
+        }}
+        onConfirm={handleConfirm}
+      />
     );
   }
 
@@ -252,7 +165,11 @@ function ImportForm({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <FieldLabel htmlFor="import-mode">Modus</FieldLabel>
-          <Select id="import-mode" value={mode} onChange={(e) => setMode(e.target.value as "source" | "target")}>
+          <Select
+            id="import-mode"
+            value={mode}
+            onChange={(e) => setMode(e.target.value === "target" ? "target" : "source")}
+          >
             <option value="source">Quellsprache importieren</option>
             <option value="target" disabled={locales.length === 0}>
               Zielsprache importieren
@@ -264,7 +181,12 @@ function ImportForm({
           {mode === "source" ? (
             <Input id="import-locale" mono value={sourceLocale} disabled readOnly />
           ) : (
-            <Select id="import-locale" mono value={localeId} onChange={(e) => setLocaleId(e.target.value)}>
+            <Select
+              id="import-locale"
+              mono
+              value={localeId}
+              onChange={(e) => setLocaleId(e.target.value)}
+            >
               {locales.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.code} — {l.name}
@@ -283,7 +205,7 @@ function ImportForm({
           value={selectedNamespace}
           onChange={(e) => setSelectedNamespace(e.target.value)}
         >
-          {options.map((ns) => (
+          {[...new Set(["default", ...namespaces])].map((ns) => (
             <option key={ns} value={ns}>
               {ns}
             </option>
@@ -304,72 +226,90 @@ function ImportForm({
         )}
       </div>
 
-      <div
-        className="space-y-1.5"
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          void loadFile(e.dataTransfer.files[0]);
-        }}
-      >
-        <FieldLabel htmlFor="import-json" hint="Max. 5 MB">
-          JSON
-        </FieldLabel>
-        <label
-          className={`flex cursor-pointer justify-center rounded-md border border-dashed px-3 py-4 text-xs text-zinc-400 transition-colors focus-within:border-zinc-400 hover:border-zinc-600 ${
-            dragging ? "border-zinc-400 bg-zinc-900" : "border-zinc-800"
-          }`}
-        >
-          <span>.json-Datei hierher ziehen oder auswählen</span>
-          <input
-            type="file"
-            accept=".json,application/json"
-            className="sr-only"
-            onChange={(e) => {
-              void loadFile(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        <Textarea
-          id="import-json"
-          rows={8}
-          value={json}
-          onChange={(e) => setJson(e.target.value)}
-          placeholder={'{\n  "auth": { "login": "Anmelden" }\n}'}
-          spellCheck={false}
-          className="font-mono !text-xs"
-          required
-        />
-      </div>
+      <JsonField value={json} onChange={setJson} onError={setError} />
 
-      {alert}
+      <FormError>{error}</FormError>
 
-      <div className="flex items-center justify-end gap-2 border-t border-zinc-800/80 pt-4">
+      <ModalActions>
         <Button variant="ghost" onClick={onCancel} disabled={pending}>
           Abbrechen
         </Button>
         <Button type="submit" variant="primary" disabled={pending || !json.trim()}>
           {pending ? "Prüfe …" : "Vorschau"}
         </Button>
-      </div>
+      </ModalActions>
     </form>
   );
 }
 
-// shortcut: renders at most 500 names; virtualize if users need to scan more.
-function KeyList({ keys }: { keys: string[] }) {
+/** JSON textarea that also accepts a dropped or picked .json file. */
+function JsonField({
+  value,
+  onChange,
+  onError,
+}: {
+  value: string;
+  onChange: (json: string) => void;
+  onError: (error: string | null) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+
+  async function loadFile(file: File | undefined) {
+    if (!file) return;
+    onError(null);
+    if (!file.name.toLowerCase().endsWith(".json"))
+      return onError("Bitte eine .json-Datei wählen.");
+    if (file.size > MAX_BYTES) return onError("Die Datei ist größer als 5 MB.");
+    try {
+      onChange(await file.text());
+    } catch {
+      onError("Die Datei konnte nicht gelesen werden.");
+    }
+  }
+
   return (
-    <ul className="mt-2 max-h-40 overflow-y-auto rounded border border-zinc-800 bg-[#09090b] px-2 py-1.5 font-mono text-[11px] break-all text-zinc-400">
-      {keys.slice(0, 500).map((key) => (
-        <li key={key}>{key}</li>
-      ))}
-      {keys.length > 500 && <li className="text-zinc-600">… {keys.length - 500} weitere</li>}
-    </ul>
+    <div
+      className="space-y-1.5"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        void loadFile(e.dataTransfer.files[0]);
+      }}
+    >
+      <FieldLabel htmlFor="import-json" hint="Max. 5 MB">
+        JSON
+      </FieldLabel>
+      <label
+        className={`flex cursor-pointer justify-center rounded-md border border-dashed px-3 py-4 text-xs text-zinc-400 transition-colors focus-within:border-zinc-400 hover:border-zinc-600 ${
+          dragging ? "border-zinc-400 bg-zinc-900" : "border-zinc-800"
+        }`}
+      >
+        <span>.json-Datei hierher ziehen oder auswählen</span>
+        <input
+          type="file"
+          accept=".json,application/json"
+          className="sr-only"
+          onChange={(e) => {
+            void loadFile(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+      </label>
+      <Textarea
+        id="import-json"
+        rows={8}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={'{\n  "auth": { "login": "Anmelden" }\n}'}
+        spellCheck={false}
+        className="font-mono !text-xs"
+        required
+      />
+    </div>
   );
 }

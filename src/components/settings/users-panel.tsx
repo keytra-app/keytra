@@ -4,17 +4,14 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { TrashIcon } from "@/components/ui/icons";
-import { Select } from "@/components/ui/input";
-import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import type { Role } from "@/lib/auth/session";
+import { formatDate } from "@/lib/format";
 import { deleteUserAction, updateUserRoleAction } from "@/lib/users/actions";
 import type { UserListRow } from "@/lib/users/queries";
-
-function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" }).format(new Date(iso));
-}
+import { RoleSelect } from "./role-select";
 
 export function UsersPanel({
   users,
@@ -99,17 +96,13 @@ export function UsersPanel({
                         {user.role}
                       </Badge>
                     ) : (
-                      <Select
-                        mono
+                      <RoleSelect
                         aria-label={`Rolle für ${user.name}`}
                         value={user.role}
                         disabled={isBusy}
-                        onChange={(e) => handleRoleChange(user, e.target.value as Role)}
+                        onChange={(role) => handleRoleChange(user, role)}
                         className="h-7 w-32 py-0 text-xs"
-                      >
-                        <option value="translator">translator</option>
-                        <option value="admin">admin</option>
-                      </Select>
+                      />
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-zinc-500">{formatDate(user.createdAt)}</td>
@@ -135,25 +128,20 @@ export function UsersPanel({
         </table>
       </div>
 
-      <Modal
+      <ConfirmModal
         open={Boolean(userToDelete)}
-        onClose={() => !pendingDelete && setUserToDelete(null)}
+        onClose={() => setUserToDelete(null)}
+        onConfirm={handleConfirmDelete}
         title="Benutzer löschen"
         description={
           userToDelete
             ? `Der Account von ${userToDelete.name} (${userToDelete.email}) und alle aktiven Sitzungen werden sofort entfernt. Bestehende Übersetzungen bleiben erhalten.`
             : undefined
         }
-      >
-        <div className="flex items-center justify-end gap-2 border-t border-zinc-800/80 pt-4">
-          <Button variant="ghost" onClick={() => setUserToDelete(null)} disabled={pendingDelete}>
-            Abbrechen
-          </Button>
-          <Button variant="danger-solid" onClick={handleConfirmDelete} disabled={pendingDelete}>
-            {pendingDelete ? "Lösche …" : "Account löschen"}
-          </Button>
-        </div>
-      </Modal>
+        confirmLabel="Account löschen"
+        pendingLabel="Lösche …"
+        pending={pendingDelete}
+      />
     </section>
   );
 }

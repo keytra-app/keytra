@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InvalidJsonError, computeSourceHash, flattenJson, unflattenJson } from "./json";
+import { computeSourceHash, flattenJson, InvalidJsonError, unflattenJson } from "./json";
 
 describe("flattenJson / unflattenJson roundtrip", () => {
   it("roundtrips flat dotted JSON", () => {
@@ -15,7 +15,13 @@ describe("flattenJson / unflattenJson roundtrip", () => {
   });
 
   it("keeps empty strings, special characters and unicode", () => {
-    const input = { empty: "", quote: 'say "hi"', nl: "line1\nline2", emoji: "🔑 Schlüssel", tab: "a\tb" };
+    const input = {
+      empty: "",
+      quote: 'say "hi"',
+      nl: "line1\nline2",
+      emoji: "🔑 Schlüssel",
+      tab: "a\tb",
+    };
     expect(unflattenJson(flattenJson(input))).toEqual(input);
   });
 
@@ -33,19 +39,26 @@ describe("flattenJson / unflattenJson roundtrip", () => {
   });
 
   it("keeps __proto__ as plain data", () => {
-    const input = JSON.parse('{"__proto__": {"polluted": "yes"}}') as Record<string, unknown>;
+    const input: unknown = JSON.parse('{"__proto__": {"polluted": "yes"}}');
     const flat = flattenJson(input);
     expect(Object.getPrototypeOf(flat)).toBe(Object.prototype);
     expect(Object.keys(flat)).toEqual(["__proto__.polluted"]);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
+
+  it("roundtrips leaf/parent conflicts, literal dots and prototype keys", () => {
+    const tricky = JSON.parse(
+      '{"a":"1","a.b":"2","a.b.c":"3","Wait...":"4","__proto__.x":"5","constructor":"6"}',
+    );
+    expect(flattenJson(unflattenJson(tricky))).toEqual(tricky);
+  });
 });
 
 describe("flattenJson rejects invalid input", () => {
   it.each([
-    ["array root", [] as unknown as Record<string, unknown>],
-    ["null root", null as unknown as Record<string, unknown>],
-    ["string root", "text" as unknown as Record<string, unknown>],
+    ["array root", []],
+    ["null root", null],
+    ["string root", "text"],
   ])("rejects %s", (_name, input) => {
     expect(() => flattenJson(input)).toThrow(InvalidJsonError);
   });
@@ -90,5 +103,8 @@ describe("computeSourceHash", () => {
     expect(computeSourceHash("Hallo")).toMatch(/^[0-9a-f]{64}$/);
     expect(computeSourceHash("Hallo")).toBe(computeSourceHash("Hallo"));
     expect(computeSourceHash("Hallo")).not.toBe(computeSourceHash("hallo"));
+    expect(computeSourceHash("abc")).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
   });
 });

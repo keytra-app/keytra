@@ -9,7 +9,10 @@ export default function DashboardNotFound() {
       <p className="max-w-xs text-xs text-zinc-500">
         Das angeforderte Projekt existiert nicht oder wurde gelöscht.
       </p>
-      <Link href="/" className={buttonClasses({ variant: "secondary", size: "sm", className: "mt-2" })}>
+      <Link
+        href="/"
+        className={buttonClasses({ variant: "secondary", size: "sm", className: "mt-2" })}
+      >
         Zur Projektübersicht
       </Link>
     </div>

@@ -1,8 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-
-export type FormState = { error?: string } | undefined;
+import type { FormState } from "@/lib/action-result";
 
 // Kept inside the client module: constants exported from a "use client" file
 // would arrive in Server Components as client references, not objects.
@@ -10,7 +9,11 @@ const FIELDS = {
   name: { label: "Name", type: "text", autoComplete: "name" },
   email: { label: "E-Mail", type: "email", autoComplete: "email" },
   password: { label: "Passwort", type: "password", autoComplete: "current-password" },
-  "new-password": { label: "Passwort (min. 8 Zeichen)", type: "password", autoComplete: "new-password" },
+  "new-password": {
+    label: "Passwort (min. 8 Zeichen)",
+    type: "password",
+    autoComplete: "new-password",
+  },
 } as const;
 
 export type FieldKey = keyof typeof FIELDS;

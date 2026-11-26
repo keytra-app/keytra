@@ -5,7 +5,11 @@ export const unauthorized = () =>
   apiError(401, "Invalid or missing API key.", { "WWW-Authenticate": "Bearer" });
 
 /** Reads an enum query param; the first option is the default, null means invalid. */
-export function enumParam<T extends string>(url: URL, name: string, options: readonly [T, ...T[]]): T | null {
+export function enumParam<T extends string>(
+  url: URL,
+  name: string,
+  options: readonly [T, ...T[]],
+): T | null {
   const value = url.searchParams.get(name);
   if (value === null) return options[0];
   return options.find((o) => o === value) ?? null;

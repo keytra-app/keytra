@@ -4,17 +4,16 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { requireAdmin, type Role, UUID_RE } from "@/lib/auth/session";
+import type { ActionResult } from "@/lib/action-result";
+import { isRole, requireAdmin, type Role, UUID_RE } from "@/lib/auth/session";
 
-export type UserActionResult = { ok: true } | { ok: false; error: string };
-
-export async function updateUserRoleAction(userId: string, role: Role): Promise<UserActionResult> {
+export async function updateUserRoleAction(userId: string, role: Role): Promise<ActionResult> {
   const admin = await requireAdmin();
 
   if (!UUID_RE.test(userId)) {
     return { ok: false, error: "Ungültige Benutzer-ID." };
   }
-  if (!users.role.enumValues.includes(role)) {
+  if (!isRole(role)) {
     return { ok: false, error: "Ungültige Rolle." };
   }
   if (userId === admin.id) {
@@ -35,7 +34,7 @@ export async function updateUserRoleAction(userId: string, role: Role): Promise<
   return { ok: true };
 }
 
-export async function deleteUserAction(userId: string): Promise<UserActionResult> {
+export async function deleteUserAction(userId: string): Promise<ActionResult> {
   const admin = await requireAdmin();
 
   if (!UUID_RE.test(userId)) {

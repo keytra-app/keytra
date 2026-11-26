@@ -24,8 +24,7 @@ export function KeysPanel({ project, keys }: { project: KeyProject; keys: Source
   const visible = keys.filter(
     (k) =>
       (namespace === ALL || k.namespace === namespace) &&
-      (!q ||
-        [k.key, k.sourceValue, k.description ?? ""].some((v) => v.toLowerCase().includes(q))),
+      (!q || [k.key, k.sourceValue, k.description ?? ""].some((v) => v.toLowerCase().includes(q))),
   );
 
   return (
@@ -114,14 +113,12 @@ export function KeysPanel({ project, keys }: { project: KeyProject; keys: Source
           onClose={() => setEditingKey(null)}
           projectId={project.id}
           sourceLocale={project.sourceLocale}
-          onUpdated={() => {}}
         />
       )}
       <DeleteKeyModal
         item={deletingKey}
         onClose={() => setDeletingKey(null)}
         projectId={project.id}
-        onDeleted={() => {}}
       />
     </section>
   );

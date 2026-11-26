@@ -10,7 +10,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     <ToastProvider>
       <div className="flex min-h-full flex-1 flex-col bg-[#09090b]">
         <Topbar user={user} />
-        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-8 sm:px-6">{children}</main>
+        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-8 sm:px-6">
+          {children}
+        </main>
       </div>
     </ToastProvider>
   );

@@ -16,10 +16,7 @@ export function Input({
   );
 }
 
-export function Textarea({
-  className = "",
-  ...props
-}: ComponentPropsWithRef<"textarea">) {
+export function Textarea({ className = "", ...props }: ComponentPropsWithRef<"textarea">) {
   return <textarea className={`${FIELD_BASE} px-3 py-2 resize-y ${className}`.trim()} {...props} />;
 }
 

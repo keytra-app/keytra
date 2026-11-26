@@ -23,13 +23,16 @@ export function ProjectTabs({ detail }: { detail: ProjectDetail }) {
   const { project, totalKeys, locales, adminData } = detail;
   const isAdmin = adminData !== null;
 
-  const exampleTargetLocale =
-    locales[0]?.code ?? (project.sourceLocale === "de" ? "en" : "de");
+  const exampleTargetLocale = locales[0]?.code ?? (project.sourceLocale === "de" ? "en" : "de");
 
   return (
     <div className="space-y-6">
       {isAdmin && (
-        <div role="tablist" aria-label="Projektbereiche" className="flex items-center gap-1 border-b border-zinc-800">
+        <div
+          role="tablist"
+          aria-label="Projektbereiche"
+          className="flex items-center gap-1 border-b border-zinc-800"
+        >
           {ADMIN_TABS.map((tab) => {
             const active = activeTab === tab.key;
             return (
@@ -90,11 +93,7 @@ export function ProjectTabs({ detail }: { detail: ProjectDetail }) {
       )}
 
       {isAdmin && activeTab === "danger" && (
-        <DangerPanel
-          projectId={project.id}
-          projectName={project.name}
-          projectSlug={project.slug}
-        />
+        <DangerPanel projectId={project.id} projectName={project.name} projectSlug={project.slug} />
       )}
     </div>
   );

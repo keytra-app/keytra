@@ -51,9 +51,16 @@ export type EditorPageData = {
   keys: EditorKeyItem[];
 };
 
-export async function getEditorData(slug: string, localeCode: string): Promise<EditorPageData> {
-  // Auth first: otherwise 404 vs. login redirect reveals which slugs exist.
-  await requireAuth();
+type TranslationRow = {
+  keyId: string;
+  localeId: string;
+  value: string;
+  status: "translated" | "outdated";
+  updatedAt: Date;
+  updatedByName: string | null;
+};
+
+async function findProjectBySlug(slug: string) {
   const [project] = await db
     .select({
       id: projects.id,
@@ -64,28 +71,11 @@ export async function getEditorData(slug: string, localeCode: string): Promise<E
     .from(projects)
     .where(eq(projects.slug, slug))
     .limit(1);
+  return project ?? null;
+}
 
-  if (!project) notFound();
-
-  const user = await requireProjectAccess(project.id);
-
-  const allLocales = await db
-    .select({
-      id: projectLocales.id,
-      code: projectLocales.code,
-      name: projectLocales.name,
-    })
-    .from(projectLocales)
-    .where(eq(projectLocales.projectId, project.id))
-    .orderBy(asc(projectLocales.code));
-
-  const targetLocales = allLocales.filter((l) => l.code !== project.sourceLocale);
-  const activeLocale = targetLocales.find((l) => l.code === localeCode);
-  if (!activeLocale) notFound();
-
-  const localeById = new Map(targetLocales.map((l) => [l.id, l]));
-
-  const [keyRows, translationRows] = await Promise.all([
+async function loadKeysAndTranslations(projectId: string) {
+  return Promise.all([
     db
       .select({
         id: translationKeys.id,
@@ -95,7 +85,7 @@ export async function getEditorData(slug: string, localeCode: string): Promise<E
         sourceValue: translationKeys.sourceValue,
       })
       .from(translationKeys)
-      .where(eq(translationKeys.projectId, project.id))
+      .where(eq(translationKeys.projectId, projectId))
       .orderBy(asc(translationKeys.namespace), asc(translationKeys.key)),
     db
       .select({
@@ -109,55 +99,76 @@ export async function getEditorData(slug: string, localeCode: string): Promise<E
       .from(translations)
       .innerJoin(translationKeys, eq(translationKeys.id, translations.keyId))
       .leftJoin(users, eq(users.id, translations.updatedBy))
-      .where(eq(translationKeys.projectId, project.id)),
+      .where(eq(translationKeys.projectId, projectId)),
   ]);
+}
 
+/**
+ * Attaches the active locale's translation and, as references, the finished translations of
+ * the other target locales to every key.
+ */
+function buildEditorKeys(
+  keyRows: SourceKey[],
+  translationRows: TranslationRow[],
+  activeLocaleId: string,
+  targetLocales: EditorLocaleOption[],
+): EditorKeyItem[] {
+  const localeById = new Map(targetLocales.map((l) => [l.id, l]));
   const activeByKey = new Map<string, EditorTranslation>();
   const refsByKey = new Map<string, EditorReferenceTranslation[]>();
 
   for (const row of translationRows) {
-    if (row.localeId === activeLocale.id) {
+    if (row.localeId === activeLocaleId) {
       activeByKey.set(row.keyId, {
         value: row.value,
         status: row.status,
         updatedAt: row.updatedAt.toISOString(),
-        updatedByName: row.updatedByName ?? null,
+        updatedByName: row.updatedByName,
       });
       continue;
     }
 
-    if (row.status === "translated" && row.value.length > 0) {
-      const refLocale = localeById.get(row.localeId);
-      if (!refLocale) continue;
-      const list = refsByKey.get(row.keyId) ?? [];
-      list.push({
-        localeCode: refLocale.code,
-        localeName: refLocale.name,
-        value: row.value,
-      });
-      refsByKey.set(row.keyId, list);
-    }
+    const refLocale = localeById.get(row.localeId);
+    if (row.status !== "translated" || row.value.length === 0 || !refLocale) continue;
+    const list = refsByKey.get(row.keyId) ?? [];
+    list.push({ localeCode: refLocale.code, localeName: refLocale.name, value: row.value });
+    refsByKey.set(row.keyId, list);
   }
 
-  const keys: EditorKeyItem[] = keyRows.map((row) => {
-    const references = refsByKey.get(row.id) ?? [];
-    references.sort((a, b) => a.localeCode.localeCompare(b.localeCode));
-    return {
-      id: row.id,
-      namespace: row.namespace,
-      key: row.key,
-      description: row.description,
-      sourceValue: row.sourceValue,
-      translation: activeByKey.get(row.id) ?? null,
-      references,
-    };
-  });
+  return keyRows.map((row) => ({
+    ...row,
+    translation: activeByKey.get(row.id) ?? null,
+    references: (refsByKey.get(row.id) ?? []).sort((a, b) =>
+      a.localeCode.localeCompare(b.localeCode),
+    ),
+  }));
+}
+
+export async function getEditorData(slug: string, localeCode: string): Promise<EditorPageData> {
+  // Auth first: otherwise 404 vs. login redirect reveals which slugs exist.
+  await requireAuth();
+  const project = await findProjectBySlug(slug);
+  if (!project) notFound();
+
+  const user = await requireProjectAccess(project.id);
+
+  const allLocales = await db
+    .select({ id: projectLocales.id, code: projectLocales.code, name: projectLocales.name })
+    .from(projectLocales)
+    .where(eq(projectLocales.projectId, project.id))
+    .orderBy(asc(projectLocales.code));
+
+  const targetLocales = allLocales.filter((l) => l.code !== project.sourceLocale);
+  const activeLocale = targetLocales.find((l) => l.code === localeCode);
+  if (!activeLocale) notFound();
+
+  const [keyRows, translationRows] = await loadKeysAndTranslations(project.id);
 
   return {
     user,
     project,
     locale: activeLocale,
     locales: targetLocales,
-    keys,
+    keys: buildEditorKeys(keyRows, translationRows, activeLocale.id, targetLocales),
   };
 }

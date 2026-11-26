@@ -15,7 +15,7 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
  * Rejects (never silently drops) anything but strings and objects: a dropped key
  * would be deleted by a push with `prune`.
  */
-export function flattenJson(input: Record<string, unknown>): Record<string, string> {
+export function flattenJson(input: unknown): Record<string, string> {
   if (!isPlainObject(input)) throw new InvalidJsonError("Root must be a JSON object.");
   const out = new Map<string, string>();
 

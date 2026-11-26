@@ -1,22 +1,30 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
-import { db } from "@/db";
-import { projectLocales, projects, translationKeys, translations } from "@/db/schema";
+import type { ActionResult } from "@/lib/action-result";
 import { requireAdmin, requireProjectAccess, UUID_RE } from "@/lib/auth/session";
-import { computeSourceHash } from "@/lib/i18n/json";
-import { lockProject } from "@/lib/i18n/sync";
-import type { ActionResult } from "@/lib/projects/actions";
+import { findProjectById, revalidateProject } from "@/lib/projects/lookup";
+import { deleteKey, insertKey, saveTranslation, updateKey } from "./keys";
+import type { SourceKey } from "./queries";
 
 const MAX_KEY_LENGTH = 512;
 const MAX_NAMESPACE_LENGTH = 100;
 const MAX_DESCRIPTION_LENGTH = 1000;
 
-function pgCode(e: unknown): string | undefined {
-  const err = e as { code?: string; cause?: { code?: string } } | null;
-  return err?.code ?? err?.cause?.code;
-}
+const INVALID_ID = { ok: false, error: "Ungültige ID." } as const;
+const INVALID_SOURCE = { ok: false, error: "Ungültiger Quelltext." } as const;
+const PROJECT_NOT_FOUND = { ok: false, error: "Projekt nicht gefunden." } as const;
+const KEY_NOT_FOUND = { ok: false, error: "Key nicht gefunden." } as const;
+const DESCRIPTION_TOO_LONG = {
+  ok: false,
+  error: `Beschreibung darf maximal ${MAX_DESCRIPTION_LENGTH} Zeichen lang sein.`,
+} as const;
+
+// Server Action inputs are untrusted at runtime, whatever their static type says.
+const isStorableText = (value: unknown): value is string =>
+  typeof value === "string" && !value.includes("\0");
+
+const isValidDescription = (description: string | null) =>
+  !description || (description.length <= MAX_DESCRIPTION_LENGTH && isStorableText(description));
 
 export async function saveTranslationAction(input: {
   projectId: string;
@@ -26,90 +34,20 @@ export async function saveTranslationAction(input: {
   /** The source text the translator saw; a mismatch means the source changed meanwhile. */
   sourceValue: string;
 }): Promise<ActionResult<{ updatedAt: string; updatedByName: string }>> {
-  if (
-    !UUID_RE.test(input.projectId) ||
-    !UUID_RE.test(input.keyId) ||
-    !UUID_RE.test(input.localeId)
-  ) {
-    return { ok: false, error: "Ungültige ID." };
+  if (![input.projectId, input.keyId, input.localeId].every((id) => UUID_RE.test(id))) {
+    return INVALID_ID;
   }
 
   const user = await requireProjectAccess(input.projectId);
 
-  if (typeof input.value !== "string" || input.value.includes("\0")) {
-    return { ok: false, error: "Ungültiger Übersetzungstext." };
-  }
-  if (typeof input.sourceValue !== "string") {
-    return { ok: false, error: "Ungültiger Quelltext." };
-  }
+  if (!isStorableText(input.value)) return { ok: false, error: "Ungültiger Übersetzungstext." };
+  if (typeof input.sourceValue !== "string") return INVALID_SOURCE;
 
-  const [[project], [localeRow]] = await Promise.all([
-    db
-      .select({ id: projects.id, slug: projects.slug, sourceLocale: projects.sourceLocale })
-      .from(projects)
-      .where(eq(projects.id, input.projectId))
-      .limit(1),
-    db
-      .select({ id: projectLocales.id, code: projectLocales.code })
-      .from(projectLocales)
-      .where(and(eq(projectLocales.id, input.localeId), eq(projectLocales.projectId, input.projectId)))
-      .limit(1),
-  ]);
+  const result = await saveTranslation({ ...input, userId: user.id });
+  if (!result.ok) return result;
 
-  if (!project) return { ok: false, error: "Projekt nicht gefunden." };
-  if (!localeRow || localeRow.code === project.sourceLocale) {
-    return { ok: false, error: "Zielsprache nicht gefunden." };
-  }
-
-  const now = new Date();
-  const error = await db.transaction(async (tx) => {
-    // FOR SHARE blocks a concurrent source change until this save commits, so its
-    // "mark outdated" UPDATE sees this row; a change that committed first fails the check below.
-    const [keyRow] = await tx
-      .select({ id: translationKeys.id, sourceValue: translationKeys.sourceValue })
-      .from(translationKeys)
-      .where(and(eq(translationKeys.id, input.keyId), eq(translationKeys.projectId, input.projectId)))
-      .for("share");
-
-    if (!keyRow) return "Key nicht gefunden.";
-    if (keyRow.sourceValue !== input.sourceValue) {
-      return "Der Quelltext wurde inzwischen geändert. Bitte Seite neu laden.";
-    }
-    if (input.value.trim() === "" && keyRow.sourceValue.trim() !== "") {
-      return "Übersetzung darf nicht leer sein.";
-    }
-
-    await tx
-      .insert(translations)
-      .values({
-        keyId: keyRow.id,
-        localeId: localeRow.id,
-        value: input.value,
-        status: "translated",
-        updatedBy: user.id,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [translations.keyId, translations.localeId],
-        set: {
-          value: input.value,
-          status: "translated",
-          updatedBy: user.id,
-          updatedAt: now,
-        },
-      });
-    return null;
-  });
-  if (error) return { ok: false, error };
-
-  revalidatePath("/");
-  revalidatePath(`/projects/${project.slug}`);
-
-  return {
-    ok: true,
-    updatedAt: now.toISOString(),
-    updatedByName: user.name,
-  };
+  revalidateProject(result.projectSlug);
+  return { ok: true, updatedAt: result.updatedAt.toISOString(), updatedByName: user.name };
 }
 
 export async function createKeyAction(input: {
@@ -118,86 +56,43 @@ export async function createKeyAction(input: {
   key: string;
   sourceValue: string;
   description?: string;
-}): Promise<
-  ActionResult<{
-    item: {
-      id: string;
-      namespace: string;
-      key: string;
-      description: string | null;
-      sourceValue: string;
-    };
-  }>
-> {
+}): Promise<ActionResult<{ item: SourceKey }>> {
   await requireAdmin();
 
-  if (!UUID_RE.test(input.projectId)) {
-    return { ok: false, error: "Ungültige Projekt-ID." };
-  }
+  if (!UUID_RE.test(input.projectId)) return { ok: false, error: "Ungültige Projekt-ID." };
 
   const namespace = (input.namespace ?? "").trim() || "default";
   const key = input.key.trim();
-  const sourceValue = input.sourceValue;
   const description = input.description?.trim() || null;
 
   if (namespace.length > MAX_NAMESPACE_LENGTH || namespace.includes("\0")) {
-    return { ok: false, error: `Namespace darf maximal ${MAX_NAMESPACE_LENGTH} Zeichen lang sein.` };
+    return {
+      ok: false,
+      error: `Namespace darf maximal ${MAX_NAMESPACE_LENGTH} Zeichen lang sein.`,
+    };
   }
   if (!key || key.length > MAX_KEY_LENGTH || key.includes("\0")) {
     return { ok: false, error: `Key muss zwischen 1 und ${MAX_KEY_LENGTH} Zeichen lang sein.` };
   }
-  if (typeof sourceValue !== "string" || sourceValue.includes("\0")) {
-    return { ok: false, error: "Ungültiger Quelltext." };
+  if (!isStorableText(input.sourceValue)) return INVALID_SOURCE;
+  if (!isValidDescription(description)) return DESCRIPTION_TOO_LONG;
+
+  const project = await findProjectById(input.projectId);
+  if (!project) return PROJECT_NOT_FOUND;
+
+  const item = await insertKey({
+    projectId: project.id,
+    namespace,
+    key,
+    sourceValue: input.sourceValue,
+    description,
+  });
+  if (!item) {
+    return { ok: false, error: `Der Key „${key}“ existiert bereits im Namespace „${namespace}“.` };
   }
-  if (description && (description.length > MAX_DESCRIPTION_LENGTH || description.includes("\0"))) {
-    return {
-      ok: false,
-      error: `Beschreibung darf maximal ${MAX_DESCRIPTION_LENGTH} Zeichen lang sein.`,
-    };
-  }
 
-  const [project] = await db
-    .select({ id: projects.id, slug: projects.slug })
-    .from(projects)
-    .where(eq(projects.id, input.projectId))
-    .limit(1);
-
-  if (!project) return { ok: false, error: "Projekt nicht gefunden." };
-
-  const sourceHash = computeSourceHash(sourceValue);
-
-  try {
-    const [created] = await db
-      .insert(translationKeys)
-      .values({
-        projectId: project.id,
-        namespace,
-        key,
-        sourceValue,
-        sourceHash,
-        description,
-      })
-      .returning({
-        id: translationKeys.id,
-        namespace: translationKeys.namespace,
-        key: translationKeys.key,
-        description: translationKeys.description,
-        sourceValue: translationKeys.sourceValue,
-      });
-
-    revalidatePath("/");
-    revalidatePath(`/projects/${project.slug}`);
-
-    return { ok: true, item: created };
-  } catch (e) {
-    if (pgCode(e) === "23505") {
-      return {
-        ok: false,
-        error: `Der Key „${key}“ existiert bereits im Namespace „${namespace}“.`,
-      };
-    }
-    throw e;
-  }
+  revalidateProject(project.slug);
+  return { ok: true, item };
 }
 
 export async function updateKeyAction(input: {
@@ -206,99 +101,29 @@ export async function updateKeyAction(input: {
   sourceValue?: string;
   description?: string | null;
 }): Promise<
-  ActionResult<{
-    sourceChanged: boolean;
-    sourceValue: string;
-    description: string | null;
-  }>
+  ActionResult<{ sourceChanged: boolean; sourceValue: string; description: string | null }>
 > {
   await requireAdmin();
 
-  if (!UUID_RE.test(input.projectId) || !UUID_RE.test(input.keyId)) {
-    return { ok: false, error: "Ungültige ID." };
+  if (!UUID_RE.test(input.projectId) || !UUID_RE.test(input.keyId)) return INVALID_ID;
+  if (input.sourceValue !== undefined && !isStorableText(input.sourceValue)) {
+    return INVALID_SOURCE;
   }
 
-  if (input.sourceValue !== undefined) {
-    if (typeof input.sourceValue !== "string" || input.sourceValue.includes("\0")) {
-      return { ok: false, error: "Ungültiger Quelltext." };
-    }
-  }
-
-  const nextDescriptionInput =
+  const description =
     input.description === undefined ? undefined : input.description?.trim() || null;
+  if (description !== undefined && !isValidDescription(description)) return DESCRIPTION_TOO_LONG;
 
-  if (
-    nextDescriptionInput &&
-    (nextDescriptionInput.length > MAX_DESCRIPTION_LENGTH || nextDescriptionInput.includes("\0"))
-  ) {
-    return {
-      ok: false,
-      error: `Beschreibung darf maximal ${MAX_DESCRIPTION_LENGTH} Zeichen lang sein.`,
-    };
-  }
+  const project = await findProjectById(input.projectId);
+  if (!project) return PROJECT_NOT_FOUND;
 
-  const [project] = await db
-    .select({ id: projects.id, slug: projects.slug })
-    .from(projects)
-    .where(eq(projects.id, input.projectId))
-    .limit(1);
-
-  if (!project) return { ok: false, error: "Projekt nicht gefunden." };
-
-  const result = await db.transaction(async (tx) => {
-    // Same lock as imports: a concurrent target import must not re-mark this key as translated.
-    await lockProject(tx, project.id);
-    const [existing] = await tx
-      .select({
-        id: translationKeys.id,
-        sourceValue: translationKeys.sourceValue,
-        sourceHash: translationKeys.sourceHash,
-        description: translationKeys.description,
-      })
-      .from(translationKeys)
-      .where(
-        and(eq(translationKeys.id, input.keyId), eq(translationKeys.projectId, project.id)),
-      )
-      .limit(1);
-
-    if (!existing) return null;
-
-    const nextSourceValue = input.sourceValue ?? existing.sourceValue;
-    const nextSourceHash =
-      input.sourceValue !== undefined ? computeSourceHash(nextSourceValue) : existing.sourceHash;
-    const sourceChanged = nextSourceHash !== existing.sourceHash;
-    const nextDescription =
-      nextDescriptionInput !== undefined ? nextDescriptionInput : existing.description;
-
-    await tx
-      .update(translationKeys)
-      .set({
-        sourceValue: nextSourceValue,
-        sourceHash: nextSourceHash,
-        description: nextDescription,
-        updatedAt: new Date(),
-      })
-      .where(eq(translationKeys.id, existing.id));
-
-    if (sourceChanged) {
-      await tx
-        .update(translations)
-        .set({ status: "outdated" })
-        .where(and(eq(translations.keyId, existing.id), eq(translations.status, "translated")));
-    }
-
-    return {
-      sourceChanged,
-      sourceValue: nextSourceValue,
-      description: nextDescription,
-    };
+  const result = await updateKey(project.id, input.keyId, {
+    sourceValue: input.sourceValue,
+    description,
   });
+  if (!result) return KEY_NOT_FOUND;
 
-  if (!result) return { ok: false, error: "Key nicht gefunden." };
-
-  revalidatePath("/");
-  revalidatePath(`/projects/${project.slug}`);
-
+  revalidateProject(project.slug);
   return { ok: true, ...result };
 }
 
@@ -308,29 +133,13 @@ export async function deleteKeyAction(input: {
 }): Promise<ActionResult> {
   await requireAdmin();
 
-  if (!UUID_RE.test(input.projectId) || !UUID_RE.test(input.keyId)) {
-    return { ok: false, error: "Ungültige ID." };
-  }
+  if (!UUID_RE.test(input.projectId) || !UUID_RE.test(input.keyId)) return INVALID_ID;
 
-  const [project] = await db
-    .select({ id: projects.id, slug: projects.slug })
-    .from(projects)
-    .where(eq(projects.id, input.projectId))
-    .limit(1);
+  const project = await findProjectById(input.projectId);
+  if (!project) return PROJECT_NOT_FOUND;
 
-  if (!project) return { ok: false, error: "Projekt nicht gefunden." };
+  if (!(await deleteKey(project.id, input.keyId))) return KEY_NOT_FOUND;
 
-  const deleted = await db
-    .delete(translationKeys)
-    .where(and(eq(translationKeys.id, input.keyId), eq(translationKeys.projectId, project.id)))
-    .returning({ id: translationKeys.id });
-
-  if (deleted.length === 0) {
-    return { ok: false, error: "Key nicht gefunden." };
-  }
-
-  revalidatePath("/");
-  revalidatePath(`/projects/${project.slug}`);
-
+  revalidateProject(project.slug);
   return { ok: true };
 }

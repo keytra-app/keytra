@@ -6,18 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { LinkIcon, TrashIcon, XIcon } from "@/components/ui/icons";
-import { Select } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { createInvite, revokeInvite } from "@/lib/auth/actions";
 import type { Role } from "@/lib/auth/session";
+import { formatDateTime } from "@/lib/format";
 import type { OpenInviteRow } from "@/lib/users/queries";
-
-function formatDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("de-DE", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(iso));
-}
+import { RoleSelect } from "./role-select";
 
 export function InvitesPanel({ invites }: { invites: OpenInviteRow[] }) {
   const router = useRouter();
@@ -79,16 +73,7 @@ export function InvitesPanel({ invites }: { invites: OpenInviteRow[] }) {
             <label htmlFor="invite-role" className="text-xs text-zinc-400 shrink-0">
               Rolle
             </label>
-            <Select
-              id="invite-role"
-              mono
-              value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
-              className="w-40"
-            >
-              <option value="translator">translator</option>
-              <option value="admin">admin</option>
-            </Select>
+            <RoleSelect id="invite-role" value={role} onChange={setRole} className="w-40" />
           </div>
 
           <Button type="submit" variant="primary" size="md" disabled={pendingCreate}>
@@ -154,8 +139,12 @@ export function InvitesPanel({ invites }: { invites: OpenInviteRow[] }) {
                       <Badge mono>{invite.role}</Badge>
                     </td>
                     <td className="px-4 py-2.5 text-zinc-300">{invite.creatorName}</td>
-                    <td className="px-4 py-2.5 text-zinc-400">{formatDateTime(invite.createdAt)}</td>
-                    <td className="px-4 py-2.5 text-zinc-400">{formatDateTime(invite.expiresAt)}</td>
+                    <td className="px-4 py-2.5 text-zinc-400">
+                      {formatDateTime(invite.createdAt)}
+                    </td>
+                    <td className="px-4 py-2.5 text-zinc-400">
+                      {formatDateTime(invite.expiresAt)}
+                    </td>
                     <td className="px-4 py-2.5 text-right">
                       <Button
                         variant="danger"

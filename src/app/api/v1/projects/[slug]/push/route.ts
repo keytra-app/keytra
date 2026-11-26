@@ -13,7 +13,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/v1/projects
   const prune = enumParam(url, "prune", ["false", "true"]);
   if (!prune) return apiError(400, 'prune must be "true" or "false".');
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
     body = await request.json();
   } catch {

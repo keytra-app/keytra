@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangleIcon, TrashIcon } from "@/components/ui/icons";
 import { FieldLabel, Input } from "@/components/ui/input";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ModalActions } from "@/components/ui/modal";
 import { deleteProjectAction } from "@/lib/projects/actions";
 
 export function DangerPanel({
@@ -41,7 +41,8 @@ export function DangerPanel({
       <div className="space-y-0.5">
         <h2 className="text-sm font-medium text-zinc-100">Gefahrenzone</h2>
         <p className="text-xs text-zinc-500">
-          Destruktive Aktionen wirken sich sofort auf alle Daten und CI-Integrationen dieses Projekts aus.
+          Destruktive Aktionen wirken sich sofort auf alle Daten und CI-Integrationen dieses
+          Projekts aus.
         </p>
       </div>
 
@@ -52,7 +53,8 @@ export function DangerPanel({
             <span>Projekt löschen</span>
           </div>
           <p className="max-w-lg text-xs text-zinc-400">
-            Löscht <span className="font-medium text-zinc-200">{projectName}</span> samt aller Translation-Keys, Übersetzungen, Zielsprachen und API-Keys dauerhaft.
+            Löscht <span className="font-medium text-zinc-200">{projectName}</span> samt aller
+            Translation-Keys, Übersetzungen, Zielsprachen und API-Keys dauerhaft.
           </p>
         </div>
 
@@ -80,7 +82,8 @@ export function DangerPanel({
         <form onSubmit={handleDelete} className="space-y-4">
           <div className="space-y-1.5">
             <FieldLabel htmlFor="confirm-project-slug">
-              Tippe <span className="font-mono text-zinc-200">{projectSlug}</span> zur Bestätigung ein
+              Tippe <span className="font-mono text-zinc-200">{projectSlug}</span> zur Bestätigung
+              ein
             </FieldLabel>
             <Input
               id="confirm-project-slug"
@@ -98,14 +101,14 @@ export function DangerPanel({
             </p>
           )}
 
-          <div className="flex items-center justify-end gap-2 border-t border-zinc-800/80 pt-4">
+          <ModalActions>
             <Button variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
               Abbrechen
             </Button>
             <Button type="submit" variant="danger-solid" disabled={!matches || pending}>
               {pending ? "Lösche …" : "Endgültig löschen"}
             </Button>
-          </div>
+          </ModalActions>
         </form>
       </Modal>
     </section>

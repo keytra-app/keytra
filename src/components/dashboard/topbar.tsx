@@ -30,7 +30,10 @@ function buildBreadcrumbs(pathname: string): Crumb[] {
         { label: locale, mono: true },
       ];
     }
-    return [{ label: "Projekte", href: "/" }, { label: slug, mono: true }];
+    return [
+      { label: "Projekte", href: "/" },
+      { label: slug, mono: true },
+    ];
   }
 
   return [{ label: "Projekte", href: "/" }];
@@ -55,7 +58,10 @@ export function Topbar({ user }: { user: CurrentUser }) {
             <span>Keytra</span>
           </Link>
 
-          <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-500">
+          <nav
+            aria-label="Breadcrumb"
+            className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-500"
+          >
             {crumbs.map((crumb, idx) => (
               <span key={`${crumb.label}-${idx}`} className="flex min-w-0 items-center gap-1.5">
                 <span className="text-zinc-700 select-none">/</span>
@@ -96,7 +102,9 @@ export function Topbar({ user }: { user: CurrentUser }) {
           <div className="hidden h-4 w-px bg-zinc-800 sm:block" />
 
           <div className="flex items-center gap-2">
-            <span className="hidden max-w-36 truncate text-xs text-zinc-300 md:inline">{user.name}</span>
+            <span className="hidden max-w-36 truncate text-xs text-zinc-300 md:inline">
+              {user.name}
+            </span>
             <Badge mono className="text-zinc-400">
               {user.role}
             </Badge>
