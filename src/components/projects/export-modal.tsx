@@ -5,7 +5,7 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { DownloadIcon } from "@/components/ui/icons";
 import { FieldLabel, Select } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import type { LocaleProgress } from "@/lib/projects/queries";
+import type { LocaleProgress } from "@/lib/projects/progress";
 
 type Props = {
   projectSlug: string;
@@ -61,7 +61,11 @@ function ExportForm({ projectSlug, sourceLocale, locales, namespaces }: Props) {
         </div>
         <div className="space-y-1.5">
           <FieldLabel htmlFor="export-fallback">Fallback</FieldLabel>
-          <Select id="export-fallback" value={fallback} onChange={(e) => setFallback(e.target.value)}>
+          <Select
+            id="export-fallback"
+            value={fallback}
+            onChange={(e) => setFallback(e.target.value)}
+          >
             <option value="source">Quellsprache</option>
             <option value="empty">Leer</option>
           </Select>
@@ -72,7 +76,12 @@ function ExportForm({ projectSlug, sourceLocale, locales, namespaces }: Props) {
         <FieldLabel htmlFor="export-namespace" hint="Für Einzel-Downloads">
           Namespace
         </FieldLabel>
-        <Select id="export-namespace" mono value={namespace} onChange={(e) => setNamespace(e.target.value)}>
+        <Select
+          id="export-namespace"
+          mono
+          value={namespace}
+          onChange={(e) => setNamespace(e.target.value)}
+        >
           {(namespaces.length ? namespaces : ["default"]).map((ns) => (
             <option key={ns} value={ns}>
               {ns}

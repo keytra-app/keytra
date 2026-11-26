@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { cache } from "react";
 import { db } from "@/db";
-import { projectMembers, projects, sessions, users } from "@/db/schema";
+import { projectMembers, projects, sessions, translatorAccess, users } from "@/db/schema";
 import { generateToken, hashPassword, sha256 } from "./crypto";
 
 export const SESSION_COOKIE = "keytra_session";
@@ -12,7 +12,11 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type Role = (typeof users.role.enumValues)[number];
+export type TranslatorAccess = (typeof translatorAccess.enumValues)[number];
 export type CurrentUser = { id: string; email: string; name: string; role: Role };
+
+export const isRole = (value: unknown): value is Role =>
+  users.role.enumValues.some((role) => role === value);
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
@@ -47,7 +51,9 @@ export async function createSession(userId: string): Promise<void> {
   const token = generateToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   // Opportunistic cleanup of this user's expired sessions.
-  await db.delete(sessions).where(and(eq(sessions.userId, userId), lt(sessions.expiresAt, new Date())));
+  await db
+    .delete(sessions)
+    .where(and(eq(sessions.userId, userId), lt(sessions.expiresAt, new Date())));
   await db.insert(sessions).values({ id: sha256(token), userId, expiresAt });
 
   (await cookies()).set(SESSION_COOKIE, token, {
@@ -93,7 +99,7 @@ export async function requireAdmin(): Promise<CurrentUser> {
 
 export async function canAccessProject(
   user: CurrentUser,
-  project: { id: string; translatorAccess: "all" | "selected" },
+  project: { id: string; translatorAccess: TranslatorAccess },
 ): Promise<boolean> {
   if (user.role === "admin" || project.translatorAccess === "all") return true;
   const [member] = await db

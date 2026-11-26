@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, type ReactNode } from "react";
+import { type ReactNode, useEffect, useId } from "react";
 import { XIcon } from "./icons";
 
 export function Modal({
@@ -67,6 +67,15 @@ export function Modal({
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+/** Right-aligned button row at the bottom of a modal. */
+export function ModalActions({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-end gap-2 border-t border-zinc-800/80 pt-4">
+      {children}
     </div>
   );
 }

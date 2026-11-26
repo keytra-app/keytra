@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 import { PlusIcon } from "@/components/ui/icons";
 import { FieldLabel, Input, Select, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
@@ -168,7 +169,10 @@ export function CreateKeyModal({
         </div>
 
         <div className="space-y-1.5">
-          <FieldLabel htmlFor="create-key-source" hint={`Ausgangssprache (${project.sourceLocale})`}>
+          <FieldLabel
+            htmlFor="create-key-source"
+            hint={`Ausgangssprache (${project.sourceLocale})`}
+          >
             Quelltext
           </FieldLabel>
           <Textarea
@@ -195,14 +199,7 @@ export function CreateKeyModal({
           />
         </div>
 
-        {error && (
-          <p
-            role="alert"
-            className="rounded-md border border-red-900/70 bg-red-950/40 px-3 py-2 text-xs text-red-300"
-          >
-            {error}
-          </p>
-        )}
+        <FormError>{error}</FormError>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800/80 pt-4">
           <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-400">

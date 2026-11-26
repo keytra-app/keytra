@@ -5,15 +5,22 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "dist/**",
-    "next-env.d.ts",
-  ]),
+  {
+    rules: {
+      "import/order": [
+        "warn",
+        {
+          groups: ["builtin", "external", "internal", ["parent", "sibling", "index"]],
+          pathGroups: [{ pattern: "@/**", group: "internal" }],
+          pathGroupsExcludedImportTypes: ["builtin"],
+          "newlines-between": "never",
+          alphabetize: { order: "asc", caseInsensitive: true },
+        },
+      ],
+      "sort-imports": ["warn", { ignoreCase: true, ignoreDeclarationSort: true }],
+    },
+  },
+  globalIgnores([".next/**", "out/**", "build/**", "dist/**", "next-env.d.ts"]),
 ]);
 
 export default eslintConfig;

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
+import { createHash, randomBytes, scrypt, type ScryptOptions, timingSafeEqual } from "node:crypto";
 
 // Stored format: scrypt$N$r$p$<salt b64>$<hash b64>
 const N = 16384;

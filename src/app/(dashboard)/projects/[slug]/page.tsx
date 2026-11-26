@@ -5,9 +5,7 @@ import { ProjectTabs } from "@/components/projects/project-tabs";
 import { Badge } from "@/components/ui/badge";
 import { getProjectDetailBySlug } from "@/lib/projects/queries";
 
-export default async function ProjectDetailPage({
-  params,
-}: PageProps<"/projects/[slug]">) {
+export default async function ProjectDetailPage({ params }: PageProps<"/projects/[slug]">) {
   const { slug } = await params;
   const { detail } = await getProjectDetailBySlug(slug);
   const { project, totalKeys, locales, namespaces } = detail;

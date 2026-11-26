@@ -18,7 +18,7 @@
     "build": "next build",
     "build:migrate": "esbuild src/db/migrate.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/migrate.mjs --external:pg-native --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint --max-warnings=0",
     "db:up": "docker compose -f docker-compose.dev.yml up -d --wait",
     "db:down": "docker compose -f docker-compose.dev.yml down",
     "db:reset": "docker compose -f docker-compose.dev.yml down -v && pnpm db:up && pnpm db:migrate",
@@ -28,7 +28,9 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
@@ -48,6 +50,7 @@
     "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "prettier": "^3.10.1",
     "tailwindcss": "4.3.3",
     "typescript": "^6",
     "vitest": "^5.1.2"

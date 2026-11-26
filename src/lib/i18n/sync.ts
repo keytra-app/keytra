@@ -16,7 +16,11 @@ function chunks<T>(items: T[]): T[][] {
 
 /** Serializes concurrent imports per project. "no key update" doesn't block FK inserts. */
 export async function lockProject(tx: Tx, projectId: string) {
-  await tx.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).for("no key update");
+  await tx
+    .select({ id: projects.id })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .for("no key update");
 }
 
 const inNamespace = (projectId: string, namespace: string) =>
@@ -37,20 +41,73 @@ export type SyncResult = {
   items: SyncItem[];
 };
 
-/** `entries` must come from `flattenJson`. */
-export async function syncSourceKeys({
-  projectId,
-  namespace,
-  entries,
-  prune = false,
-  dryRun = false,
-}: {
+type ExistingKey = { id: string; key: string; sourceValue: string; sourceHash: string };
+
+type SourcePlan = {
+  items: SyncItem[];
+  inserts: (typeof translationKeys.$inferInsert)[];
+  updates: { id: string; sourceValue: string; sourceHash: string }[];
+  pruned: ExistingKey[];
+};
+
+function planSourceSync(
+  existing: ExistingKey[],
+  { projectId, namespace, entries, prune }: SourceSyncInput,
+): SourcePlan {
+  const remaining = new Map(existing.map((row) => [row.key, row]));
+  const plan: SourcePlan = { items: [], inserts: [], updates: [], pruned: [] };
+
+  for (const [key, value] of Object.entries(entries)) {
+    const sourceHash = computeSourceHash(value);
+    const row = remaining.get(key);
+    remaining.delete(key);
+    if (!row) {
+      plan.inserts.push({ projectId, namespace, key, sourceValue: value, sourceHash });
+      plan.items.push({ key, action: "added", newValue: value });
+    } else if (row.sourceHash !== sourceHash) {
+      plan.updates.push({ id: row.id, sourceValue: value, sourceHash });
+      plan.items.push({ key, action: "updated", oldValue: row.sourceValue, newValue: value });
+    } else {
+      plan.items.push({ key, action: "unchanged", oldValue: row.sourceValue, newValue: value });
+    }
+  }
+
+  if (prune) plan.pruned = [...remaining.values()];
+  for (const row of plan.pruned) {
+    plan.items.push({ key: row.key, action: "pruned", oldValue: row.sourceValue });
+  }
+  return plan;
+}
+
+async function applySourcePlan(tx: Tx, { inserts, updates, pruned }: SourcePlan) {
+  for (const batch of chunks(inserts)) await tx.insert(translationKeys).values(batch);
+  // shortcut: one UPDATE per changed key; batch via UPDATE … FROM if large re-pushes get slow.
+  for (const { id, ...values } of updates) {
+    await tx.update(translationKeys).set(values).where(eq(translationKeys.id, id));
+  }
+  for (const batch of chunks(updates.map((u) => u.id))) {
+    await tx
+      .update(translations)
+      .set({ status: "outdated" })
+      .where(and(inArray(translations.keyId, batch), eq(translations.status, "translated")));
+  }
+  for (const batch of chunks(pruned.map((p) => p.id))) {
+    await tx.delete(translationKeys).where(inArray(translationKeys.id, batch));
+  }
+}
+
+type SourceSyncInput = {
   projectId: string;
   namespace: string;
+  /** Must come from `flattenJson`. */
   entries: Record<string, string>;
   prune?: boolean;
   dryRun?: boolean;
-}): Promise<SyncResult> {
+};
+
+/** Makes the namespace's source keys match `entries`; changed sources mark translations outdated. */
+export async function syncSourceKeys(input: SourceSyncInput): Promise<SyncResult> {
+  const { projectId, namespace, dryRun = false } = input;
   return db.transaction(async (tx) => {
     if (!dryRun) await lockProject(tx, projectId);
 
@@ -63,47 +120,11 @@ export async function syncSourceKeys({
       })
       .from(translationKeys)
       .where(inNamespace(projectId, namespace));
-    const remaining = new Map(existing.map((row) => [row.key, row]));
 
-    const items: SyncItem[] = [];
-    const inserts: (typeof translationKeys.$inferInsert)[] = [];
-    const updates: { id: string; sourceValue: string; sourceHash: string }[] = [];
+    const plan = planSourceSync(existing, input);
+    if (!dryRun) await applySourcePlan(tx, plan);
 
-    for (const [key, value] of Object.entries(entries)) {
-      const sourceHash = computeSourceHash(value);
-      const row = remaining.get(key);
-      remaining.delete(key);
-      if (!row) {
-        inserts.push({ projectId, namespace, key, sourceValue: value, sourceHash });
-        items.push({ key, action: "added", newValue: value });
-      } else if (row.sourceHash !== sourceHash) {
-        updates.push({ id: row.id, sourceValue: value, sourceHash });
-        items.push({ key, action: "updated", oldValue: row.sourceValue, newValue: value });
-      } else {
-        items.push({ key, action: "unchanged", oldValue: row.sourceValue, newValue: value });
-      }
-    }
-
-    const pruned = prune ? [...remaining.values()] : [];
-    for (const row of pruned) items.push({ key: row.key, action: "pruned", oldValue: row.sourceValue });
-
-    if (!dryRun) {
-      for (const batch of chunks(inserts)) await tx.insert(translationKeys).values(batch);
-      // shortcut: one UPDATE per changed key; batch via UPDATE … FROM if large re-pushes get slow.
-      for (const { id, ...values } of updates) {
-        await tx.update(translationKeys).set(values).where(eq(translationKeys.id, id));
-      }
-      for (const batch of chunks(updates.map((u) => u.id))) {
-        await tx
-          .update(translations)
-          .set({ status: "outdated" })
-          .where(and(inArray(translations.keyId, batch), eq(translations.status, "translated")));
-      }
-      for (const batch of chunks(pruned.map((p) => p.id))) {
-        await tx.delete(translationKeys).where(inArray(translationKeys.id, batch));
-      }
-    }
-
+    const { items, inserts, updates, pruned } = plan;
     return {
       added: inserts.length,
       updated: updates.length,
@@ -121,6 +142,40 @@ export type ImportResult = {
   skipped: number;
   items: { key: string; action: "added" | "updated" | "unchanged" | "skipped" }[];
 };
+
+type TargetRow = {
+  keyId: string;
+  key: string;
+  sourceValue: string;
+  value: string | null;
+  status: "translated" | "outdated" | null;
+};
+
+function planTargetImport(rows: TargetRow[], entries: Record<string, string>, localeId: string) {
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  const result: ImportResult = { added: 0, updated: 0, unchanged: 0, skipped: 0, items: [] };
+  const upserts: (typeof translations.$inferInsert)[] = [];
+
+  for (const [key, value] of Object.entries(entries)) {
+    const row = byKey.get(key);
+    if (!row || (value === "" && row.sourceValue !== "")) {
+      result.skipped++;
+      result.items.push({ key, action: "skipped" });
+      continue;
+    }
+    if (row.value === value && row.status === "translated") {
+      result.unchanged++;
+      result.items.push({ key, action: "unchanged" });
+      continue;
+    }
+    const action = row.value === null ? "added" : "updated";
+    result[action]++;
+    result.items.push({ key, action });
+    // updatedBy is cleared: the previous editor didn't write this value.
+    upserts.push({ keyId: row.keyId, localeId, value, status: "translated", updatedBy: null });
+  }
+  return { result, upserts };
+}
 
 /**
  * Imports a target language file. Only existing keys are touched. `skipped` counts unknown keys
@@ -162,29 +217,7 @@ export async function importTargetTranslations({
         and(eq(translations.keyId, translationKeys.id), eq(translations.localeId, localeId)),
       )
       .where(inNamespace(projectId, namespace));
-    const byKey = new Map(rows.map((row) => [row.key, row]));
-
-    const result: ImportResult = { added: 0, updated: 0, unchanged: 0, skipped: 0, items: [] };
-    const upserts: (typeof translations.$inferInsert)[] = [];
-
-    for (const [key, value] of Object.entries(entries)) {
-      const row = byKey.get(key);
-      if (!row || (value === "" && row.sourceValue !== "")) {
-        result.skipped++;
-        result.items.push({ key, action: "skipped" });
-        continue;
-      }
-      if (row.value === value && row.status === "translated") {
-        result.unchanged++;
-        result.items.push({ key, action: "unchanged" });
-        continue;
-      }
-      const action = row.value === null ? "added" : "updated";
-      result[action]++;
-      result.items.push({ key, action });
-      // updatedBy is cleared: the previous editor didn't write this value.
-      upserts.push({ keyId: row.keyId, localeId, value, status: "translated", updatedBy: null });
-    }
+    const { result, upserts } = planTargetImport(rows, entries, localeId);
 
     for (const batch of dryRun ? [] : chunks(upserts)) {
       await tx

@@ -3,9 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 import { PlusIcon } from "@/components/ui/icons";
 import { FieldLabel, Input, Select, Textarea } from "@/components/ui/input";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ModalActions } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { COMMON_LOCALES, slugify } from "@/lib/i18n/locales";
 import { createProjectAction } from "@/lib/projects/actions";
@@ -53,7 +54,8 @@ export function CreateProjectModalButton() {
     e.preventDefault();
     setError(null);
 
-    const sourceLocale = selectedLocale === CUSTOM_LOCALE_VALUE ? customLocale.trim() : selectedLocale;
+    const sourceLocale =
+      selectedLocale === CUSTOM_LOCALE_VALUE ? customLocale.trim() : selectedLocale;
 
     startTransition(async () => {
       const result = await createProjectAction({
@@ -163,20 +165,16 @@ export function CreateProjectModalButton() {
             />
           </div>
 
-          {error && (
-            <p role="alert" className="rounded-md border border-red-900/70 bg-red-950/40 px-3 py-2 text-xs text-red-300">
-              {error}
-            </p>
-          )}
+          <FormError>{error}</FormError>
 
-          <div className="flex items-center justify-end gap-2 border-t border-zinc-800/80 pt-4">
+          <ModalActions>
             <Button variant="ghost" onClick={handleClose} disabled={pending}>
               Abbrechen
             </Button>
             <Button type="submit" variant="primary" disabled={pending}>
               {pending ? "Erstelle …" : "Projekt anlegen"}
             </Button>
-          </div>
+          </ModalActions>
         </form>
       </Modal>
     </>

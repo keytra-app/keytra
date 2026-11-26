@@ -1,11 +1,11 @@
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { projectLocales } from "@/db/schema";
 import { authenticateApiKey } from "@/lib/api/auth";
 import { apiError, enumParam, namespaceParam, unauthorized } from "@/lib/api/http";
-import { buildExportObject, getExportRows } from "@/lib/i18n/export";
+import { buildExportObject, findExportLocale, getExportRows } from "@/lib/i18n/export";
 
-export async function GET(request: Request, ctx: RouteContext<"/api/v1/projects/[slug]/pull/[locale]">) {
+export async function GET(
+  request: Request,
+  ctx: RouteContext<"/api/v1/projects/[slug]/pull/[locale]">,
+) {
   const { slug, locale: code } = await ctx.params;
   const project = await authenticateApiKey(request, slug);
   if (!project) return unauthorized();
@@ -18,17 +18,9 @@ export async function GET(request: Request, ctx: RouteContext<"/api/v1/projects/
   const fallback = enumParam(url, "fallback", ["source", "empty"]);
   if (!fallback) return apiError(400, 'fallback must be "source" or "empty".');
 
-  let localeId: string | null = null;
-  if (code !== project.sourceLocale) {
-    const locales = await db
-      .select({ id: projectLocales.id, code: projectLocales.code })
-      .from(projectLocales)
-      .where(eq(projectLocales.projectId, project.id));
-    const locale = locales.find((l) => l.code === code);
-    if (!locale) return apiError(404, "Unknown locale.");
-    localeId = locale.id;
-  }
+  const locale = await findExportLocale(project, code);
+  if (!locale) return apiError(404, "Unknown locale.");
 
-  const rows = await getExportRows(project.id, localeId, namespace);
+  const rows = await getExportRows(project.id, locale.id, namespace);
   return Response.json(buildExportObject(rows, { format, fallback }));
 }

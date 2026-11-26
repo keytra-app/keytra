@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeftIcon, ChevronDownIcon, PlusIcon } from "@/components/ui/icons";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import type { EditorLocaleOption } from "@/lib/editor/queries";
 
 export function EditorHeader({
@@ -32,10 +33,6 @@ export function EditorHeader({
   onOpenCreateKey: () => void;
 }) {
   const router = useRouter();
-
-  const translatedPct = totalCount > 0 ? Math.min(100, (translatedCount / totalCount) * 100) : 0;
-  const outdatedPct =
-    totalCount > 0 ? Math.min(100 - translatedPct, (outdatedCount / totalCount) * 100) : 0;
 
   return (
     <header className="flex h-13 shrink-0 items-center justify-between gap-3 border-b border-zinc-800 bg-[#09090b] px-3 sm:px-4">
@@ -97,20 +94,12 @@ export function EditorHeader({
           className="flex items-center gap-2.5 rounded-md border border-zinc-800/90 bg-[#111113] px-2.5 py-1"
           title={`${translatedCount} von ${totalCount} übersetzt${outdatedCount > 0 ? `, ${outdatedCount} veraltet` : ""}`}
         >
-          <div className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-zinc-800 sm:flex">
-            {translatedPct > 0 && (
-              <div
-                className="h-full bg-emerald-500/85 transition-[width] duration-200"
-                style={{ width: `${translatedPct}%` }}
-              />
-            )}
-            {outdatedPct > 0 && (
-              <div
-                className="h-full bg-amber-500/80 transition-[width] duration-200"
-                style={{ width: `${outdatedPct}%` }}
-              />
-            )}
-          </div>
+          <ProgressBar
+            translated={translatedCount}
+            outdated={outdatedCount}
+            total={totalCount}
+            className="hidden h-1.5 w-16 bg-zinc-800 sm:flex"
+          />
           <span className="font-mono text-[11px] tabular-nums text-zinc-300">
             <span className="text-zinc-100">{translatedCount}</span>
             <span className="text-zinc-600"> / </span>

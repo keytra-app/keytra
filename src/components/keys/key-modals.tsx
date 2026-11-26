@@ -2,12 +2,21 @@
 
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { FormError } from "@/components/ui/form-error";
 import { AlertTriangleIcon } from "@/components/ui/icons";
 import { FieldLabel, Textarea } from "@/components/ui/input";
-import { Modal } from "@/components/ui/modal";
+import { Modal, ModalActions } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { deleteKeyAction, updateKeyAction } from "@/lib/editor/actions";
 import type { SourceKey } from "@/lib/editor/queries";
+
+export type KeyUpdate = {
+  keyId: string;
+  sourceValue: string;
+  description: string | null;
+  sourceChanged: boolean;
+};
 
 export function EditKeyModal({
   item,
@@ -16,30 +25,22 @@ export function EditKeyModal({
   sourceLocale,
   onUpdated,
 }: {
-  item: SourceKey | null;
+  item: SourceKey;
   onClose: () => void;
   projectId: string;
   sourceLocale: string;
-  onUpdated: (payload: {
-    keyId: string;
-    sourceValue: string;
-    description: string | null;
-    sourceChanged: boolean;
-  }) => void;
+  onUpdated?: (update: KeyUpdate) => void;
 }) {
   const { toast } = useToast();
-  const [sourceValue, setSourceValue] = useState(item?.sourceValue ?? "");
-  const [description, setDescription] = useState(item?.description ?? "");
+  const [sourceValue, setSourceValue] = useState(item.sourceValue);
+  const [description, setDescription] = useState(item.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-
-  if (!item) return null;
 
   const sourceWillChange = sourceValue !== item.sourceValue;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!item) return;
     setError(null);
 
     startTransition(async () => {
@@ -55,7 +56,7 @@ export function EditKeyModal({
         return;
       }
 
-      onUpdated({
+      onUpdated?.({
         keyId: item.id,
         sourceValue: result.sourceValue,
         description: result.description,
@@ -72,7 +73,7 @@ export function EditKeyModal({
 
   return (
     <Modal
-      open={Boolean(item)}
+      open
       onClose={() => !pending && onClose()}
       title="Key bearbeiten"
       description={`${item.namespace} · ${item.key}`}
@@ -117,23 +118,16 @@ export function EditKeyModal({
           />
         </div>
 
-        {error && (
-          <p
-            role="alert"
-            className="rounded-md border border-red-900/70 bg-red-950/40 px-3 py-2 text-xs text-red-300"
-          >
-            {error}
-          </p>
-        )}
+        <FormError>{error}</FormError>
 
-        <div className="flex items-center justify-end gap-2 border-t border-zinc-800/80 pt-4">
+        <ModalActions>
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Abbrechen
           </Button>
           <Button type="submit" variant="primary" disabled={pending}>
             {pending ? "Speichere …" : "Änderungen speichern"}
           </Button>
-        </div>
+        </ModalActions>
       </form>
     </Modal>
   );
@@ -148,7 +142,7 @@ export function DeleteKeyModal({
   item: SourceKey | null;
   onClose: () => void;
   projectId: string;
-  onDeleted: (keyId: string) => void;
+  onDeleted?: (keyId: string) => void;
 }) {
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -163,31 +157,26 @@ export function DeleteKeyModal({
         toast(result.error, "error");
         return;
       }
-      onDeleted(target.id);
+      onDeleted?.(target.id);
       toast(`Key „${target.key}“ gelöscht.`);
       onClose();
     });
   }
 
   return (
-    <Modal
+    <ConfirmModal
       open={Boolean(item)}
-      onClose={() => !pending && onClose()}
+      onClose={onClose}
+      onConfirm={handleConfirm}
       title="Key löschen"
       description={
         item
           ? `Der Key „${item.key}“ (${item.namespace}) und alle zugehörigen Übersetzungen in allen Sprachen werden unwiderruflich gelöscht.`
           : undefined
       }
-    >
-      <div className="flex items-center justify-end gap-2 border-t border-zinc-800/80 pt-4">
-        <Button variant="ghost" onClick={onClose} disabled={pending}>
-          Abbrechen
-        </Button>
-        <Button variant="danger-solid" onClick={handleConfirm} disabled={pending}>
-          {pending ? "Lösche …" : "Unwiderruflich löschen"}
-        </Button>
-      </div>
-    </Modal>
+      confirmLabel="Unwiderruflich löschen"
+      pendingLabel="Lösche …"
+      pending={pending}
+    />
   );
 }

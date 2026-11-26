@@ -8,9 +8,11 @@ const BASE =
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: "border border-zinc-200 bg-zinc-100 text-zinc-950 hover:bg-white",
-  secondary: "border border-zinc-800 bg-[#111113] text-zinc-200 hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
+  secondary:
+    "border border-zinc-800 bg-[#111113] text-zinc-200 hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
   ghost: "border border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100",
-  danger: "border border-zinc-800 bg-[#111113] text-red-400 hover:border-red-900/80 hover:bg-red-950/40 hover:text-red-300",
+  danger:
+    "border border-zinc-800 bg-[#111113] text-red-400 hover:border-red-900/80 hover:bg-red-950/40 hover:text-red-300",
   "danger-solid": "border border-red-800 bg-red-600/90 text-white hover:bg-red-600",
 };
 

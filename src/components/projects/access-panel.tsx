@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import type { TranslatorAccess } from "@/lib/auth/session";
 import { updateProjectAccessAction } from "@/lib/projects/actions";
 import type { TranslatorOption } from "@/lib/projects/queries";
 
@@ -15,13 +16,13 @@ export function AccessPanel({
   initialMemberIds,
 }: {
   projectId: string;
-  initialAccess: "all" | "selected";
+  initialAccess: TranslatorAccess;
   translators: TranslatorOption[];
   initialMemberIds: string[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [mode, setMode] = useState<"all" | "selected">(initialAccess);
+  const [mode, setMode] = useState(initialAccess);
   const [selectedIds, setSelectedIds] = useState<string[]>(initialMemberIds);
   const [pending, startTransition] = useTransition();
 
@@ -59,54 +60,27 @@ export function AccessPanel({
       <div className="space-y-0.5">
         <h2 className="text-sm font-medium text-zinc-100">Translator-Zugriff</h2>
         <p className="text-xs text-zinc-500">
-          Admins haben immer Zugriff auf alle Projekte. Lege fest, welche Translators dieses Projekt sehen und übersetzen dürfen.
+          Admins haben immer Zugriff auf alle Projekte. Lege fest, welche Translators dieses Projekt
+          sehen und übersetzen dürfen.
         </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={() => setMode("all")}
-          className={`flex flex-col gap-1 rounded-lg border p-4 text-left transition-colors cursor-pointer ${
-            mode === "all"
-              ? "border-zinc-500 bg-[#111113]"
-              : "border-zinc-800 bg-[#111113]/50 hover:border-zinc-700"
-          }`}
+        <AccessModeCard
+          title="Alle Translators"
+          active={mode === "all"}
+          onSelect={() => setMode("all")}
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-zinc-100">Alle Translators</span>
-            <span
-              className={`h-3.5 w-3.5 rounded-full border ${
-                mode === "all" ? "border-zinc-100 bg-zinc-100" : "border-zinc-700"
-              }`}
-            />
-          </div>
-          <p className="text-xs text-zinc-500">
-            Jeder Account mit Rolle <span className="font-mono text-zinc-400">translator</span> hat automatisch Zugriff.
-          </p>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setMode("selected")}
-          className={`flex flex-col gap-1 rounded-lg border p-4 text-left transition-colors cursor-pointer ${
-            mode === "selected"
-              ? "border-zinc-500 bg-[#111113]"
-              : "border-zinc-800 bg-[#111113]/50 hover:border-zinc-700"
-          }`}
+          Jeder Account mit Rolle <span className="font-mono text-zinc-400">translator</span> hat
+          automatisch Zugriff.
+        </AccessModeCard>
+        <AccessModeCard
+          title="Nur ausgewählte Translators"
+          active={mode === "selected"}
+          onSelect={() => setMode("selected")}
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-zinc-100">Nur ausgewählte Translators</span>
-            <span
-              className={`h-3.5 w-3.5 rounded-full border ${
-                mode === "selected" ? "border-zinc-100 bg-zinc-100" : "border-zinc-700"
-              }`}
-            />
-          </div>
-          <p className="text-xs text-zinc-500">
-            Nur die unten ausgewählten Translators sehen dieses Projekt.
-          </p>
-        </button>
+          Nur die unten ausgewählten Translators sehen dieses Projekt.
+        </AccessModeCard>
       </div>
 
       {mode === "selected" && (
@@ -139,7 +113,10 @@ export function AccessPanel({
           {translators.length === 0 ? (
             <div className="px-4 py-6 text-xs text-zinc-500">
               Noch keine Translator-Accounts vorhanden.{" "}
-              <Link href="/settings/users" className="text-zinc-300 underline underline-offset-4 hover:text-white">
+              <Link
+                href="/settings/users"
+                className="text-zinc-300 underline underline-offset-4 hover:text-white"
+              >
                 Team verwalten
               </Link>
             </div>
@@ -158,8 +135,12 @@ export function AccessPanel({
                           className="h-3.5 w-3.5 rounded border-zinc-700 bg-[#09090b] accent-zinc-100 cursor-pointer"
                         />
                         <div className="min-w-0">
-                          <p className="truncate text-xs font-medium text-zinc-200">{translator.name}</p>
-                          <p className="truncate font-mono text-[11px] text-zinc-500">{translator.email}</p>
+                          <p className="truncate text-xs font-medium text-zinc-200">
+                            {translator.name}
+                          </p>
+                          <p className="truncate font-mono text-[11px] text-zinc-500">
+                            {translator.email}
+                          </p>
                         </div>
                       </div>
                     </label>
@@ -177,5 +158,39 @@ export function AccessPanel({
         </Button>
       </div>
     </section>
+  );
+}
+
+function AccessModeCard({
+  title,
+  active,
+  onSelect,
+  children,
+}: {
+  title: string;
+  active: boolean;
+  onSelect: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`flex cursor-pointer flex-col gap-1 rounded-lg border p-4 text-left transition-colors ${
+        active
+          ? "border-zinc-500 bg-[#111113]"
+          : "border-zinc-800 bg-[#111113]/50 hover:border-zinc-700"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-zinc-100">{title}</span>
+        <span
+          className={`h-3.5 w-3.5 rounded-full border ${
+            active ? "border-zinc-100 bg-zinc-100" : "border-zinc-700"
+          }`}
+        />
+      </div>
+      <p className="text-xs text-zinc-500">{children}</p>
+    </button>
   );
 }

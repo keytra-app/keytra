@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-
-// api/auth.ts pulls in the DB client and next/server; stub them so the pure key generator can load.
-vi.mock("@/db", () => ({ db: {} }));
-vi.mock("next/server", () => ({ after: () => {} }));
-
 import { generateApiKey } from "@/lib/api/auth";
 import { generateToken, hashPassword, sha256, verifyPassword } from "./crypto";
+
+// api/auth.ts pulls in the DB client and next/server; stub them so the pure key generator can load.
+// vi.mock is hoisted above the imports.
+vi.mock("@/db", () => ({ db: {} }));
+vi.mock("next/server", () => ({ after: () => {} }));
 
 describe("hashPassword / verifyPassword", () => {
   it("verifies the correct password", async () => {
